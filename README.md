@@ -1,5 +1,10 @@
 # selectel-sm
 
+[![Tests](https://github.com/Flacy/selectel-sm/actions/workflows/tests.yml/badge.svg)](https://github.com/Flacy/selectel-sm/actions/workflows/tests.yml)
+[![Lint](https://github.com/Flacy/selectel-sm/actions/workflows/lint.yml/badge.svg)](https://github.com/Flacy/selectel-sm/actions/workflows/lint.yml)
+[![codecov](https://codecov.io/gh/Flacy/selectel-sm/branch/main/graph/badge.svg)](https://codecov.io/gh/Flacy/selectel-sm)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/selectel-sm)
+
 A typed Python client for [Selectel Secrets Manager](https://docs.selectel.ru/api/secrets-manager/),
 with both **synchronous and asynchronous** clients sharing a single transport-agnostic core.
 
