@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local-only real API responses (contain real account/project IDs and secret names).
+# Sanitized/representative copies live under tests/fixtures/.
+/response.json
+/response-list.json
