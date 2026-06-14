@@ -1,4 +1,6 @@
-"""Authentication providers for selectel-sm."""
+"""
+Authentication providers for selectel-sm.
+"""
 
 from __future__ import annotations
 

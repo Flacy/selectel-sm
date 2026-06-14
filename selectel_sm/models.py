@@ -1,4 +1,5 @@
-"""Typed models for the Keystone token and its service catalog.
+"""
+Typed models for the Keystone token and its service catalog.
 
 These are intentionally plain, frozen dataclasses built from the JSON Keystone returns. Only the
 fields this library needs are modeled; unknown fields are ignored so Selectel can extend the
@@ -25,27 +26,41 @@ __all__ = [
     "User",
 ]
 
-SECRETS_MANAGER_SERVICE = "secrets-manager"
+SECRETS_MANAGER_SERVICE: str = "secrets-manager"
 
 
 @dataclass(frozen=True, slots=True)
 class Domain:
+    """
+    A Keystone domain (account) reference.
+    """
+
     id: str | None
     name: str | None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> Domain:
+        """
+        Build a :class:`Domain` from a raw Keystone object.
+        """
         return cls(id=raw.get("id"), name=raw.get("name"))
 
 
 @dataclass(frozen=True, slots=True)
 class Project:
+    """
+    A Keystone project the token is scoped to.
+    """
+
     id: str | None
     name: str | None
     domain: Domain | None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> Project:
+        """
+        Build a :class:`Project` from a raw Keystone object.
+        """
         domain = raw.get("domain")
         return cls(
             id=raw.get("id"),
@@ -56,12 +71,19 @@ class Project:
 
 @dataclass(frozen=True, slots=True)
 class User:
+    """
+    The Keystone user the token was issued to.
+    """
+
     id: str | None
     name: str | None
     domain: Domain | None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> User:
+        """
+        Build a :class:`User` from a raw Keystone object.
+        """
         domain = raw.get("domain")
         return cls(
             id=raw.get("id"),
@@ -72,22 +94,36 @@ class User:
 
 @dataclass(frozen=True, slots=True)
 class Role:
+    """
+    A Keystone role granted by the token.
+    """
+
     id: str | None
     name: str | None
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> Role:
+        """
+        Build a :class:`Role` from a raw Keystone object.
+        """
         return cls(id=raw.get("id"), name=raw.get("name"))
 
 
 @dataclass(frozen=True, slots=True)
 class Endpoint:
+    """
+    A single service endpoint (one interface in one region).
+    """
+
     interface: str
     region: str
     url: str
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> Endpoint:
+        """
+        Build an :class:`Endpoint` from a raw catalog entry.
+        """
         return cls(
             interface=raw["interface"],
             # Some catalog entries use ``region``, others ``region_id``; prefer ``region``.
@@ -98,12 +134,19 @@ class Endpoint:
 
 @dataclass(frozen=True, slots=True)
 class Service:
+    """
+    A catalog service and its endpoints.
+    """
+
     type: str
     name: str | None
     endpoints: tuple[Endpoint, ...]
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> Service:
+        """
+        Build a :class:`Service` from a raw catalog entry.
+        """
         return cls(
             type=raw["type"],
             name=raw.get("name"),
@@ -113,15 +156,23 @@ class Service:
 
 @dataclass(frozen=True, slots=True)
 class ServiceCatalog:
-    """The service catalog from a Keystone token, used to resolve endpoint URLs."""
+    """
+    The service catalog from a Keystone token, used to resolve endpoint URLs.
+    """
 
     services: tuple[Service, ...]
 
     @classmethod
     def from_raw(cls, raw: list[dict[str, Any]]) -> ServiceCatalog:
+        """
+        Build a :class:`ServiceCatalog` from the raw ``catalog`` list.
+        """
         return cls(services=tuple(Service.from_raw(s) for s in raw))
 
     def service(self, service_type: str) -> Service | None:
+        """
+        Return the catalog service of *service_type*, or ``None`` when absent.
+        """
         return next((s for s in self.services if s.type == service_type), None)
 
     def endpoint_url(
@@ -130,23 +181,31 @@ class ServiceCatalog:
         region: str,
         interface: str = "public",
     ) -> str:
-        """Return the normalized URL for *service_type* in *region* and *interface*.
+        """
+        Return the normalized URL for *service_type* in *region* and *interface*.
 
-        Raises :class:`EndpointNotFoundError` (listing the regions that *are* available for the
-        service/interface) when there is no match.
+        :param service_type: The catalog service type to look up.
+        :param region: The desired region (e.g. ``ru-7``).
+        :param interface: The desired interface (e.g. ``public``).
+        :returns: The normalized endpoint URL.
+        :raises EndpointNotFoundError: If no endpoint matches; the error lists the regions that
+            *are* available for the service/interface.
         """
         service = self.service(service_type)
         endpoints = service.endpoints if service else ()
         for endpoint in endpoints:
             if endpoint.region == region and endpoint.interface == interface:
                 return urls.normalize(endpoint.url)
+
         available = [e.region for e in endpoints if e.interface == interface]
         raise EndpointNotFoundError(service_type, region, interface, available)
 
 
 @dataclass(frozen=True, slots=True)
 class Token:
-    """An IAM token plus the metadata Keystone returns alongside it."""
+    """
+    An IAM token plus the metadata Keystone returns alongside it.
+    """
 
     value: str
     expires_at: datetime
@@ -156,18 +215,11 @@ class Token:
     roles: tuple[Role, ...] = field(default_factory=tuple)
     catalog: ServiceCatalog = field(default_factory=lambda: ServiceCatalog(()))
 
-    def header(self) -> dict[str, str]:
-        """The header used to authenticate API requests."""
-        return {"X-Auth-Token": self.value}
-
-    def is_expired(self, *, now: datetime | None = None, margin_seconds: float = 0.0) -> bool:
-        """Whether the token is expired, treating it as expired *margin_seconds* early."""
-        now = now or datetime.now(UTC)
-        return (self.expires_at - now).total_seconds() <= margin_seconds
-
     @classmethod
     def from_response(cls, value: str, body: dict[str, Any]) -> Token:
-        """Build a token from the ``X-Subject-Token`` header *value* and the JSON *body*."""
+        """
+        Build a token from the ``X-Subject-Token`` header *value* and the JSON *body*.
+        """
         token = body.get("token", {})
         project = token.get("project")
         user = token.get("user")
@@ -180,3 +232,22 @@ class Token:
             roles=tuple(Role.from_raw(r) for r in token.get("roles", ())),
             catalog=ServiceCatalog.from_raw(token.get("catalog", [])),
         )
+
+    def header(self) -> dict[str, str]:
+        """
+        The header used to authenticate API requests.
+
+        :returns: A mapping with the ``X-Auth-Token`` header set to this token's value.
+        """
+        return {"X-Auth-Token": self.value}
+
+    def is_expired(self, *, now: datetime | None = None, margin_seconds: float = 0.0) -> bool:
+        """
+        Whether the token is expired, treating it as expired *margin_seconds* early.
+
+        :param now: Reference time; defaults to the current UTC time.
+        :param margin_seconds: Treat the token as expired this many seconds before its real expiry.
+        :returns: ``True`` when the token is (about to be) expired.
+        """
+        now = now or datetime.now(UTC)
+        return (self.expires_at - now).total_seconds() <= margin_seconds

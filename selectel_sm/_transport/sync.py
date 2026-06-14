@@ -1,4 +1,6 @@
-"""Synchronous HTTP transport."""
+"""
+Synchronous HTTP transport.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +23,8 @@ __all__ = ["SyncTransport"]
 
 
 class SyncTransport:
-    """Sends :class:`RequestSpec`s against Secrets Manager using a blocking httpx client.
+    """
+    Sends :class:`RequestSpec`s against Secrets Manager using a blocking httpx client.
 
     The base URL is resolved from the auth token's catalog on first use (or taken from
     ``config.sm_base_url``) and cached for the transport's lifetime.
@@ -34,15 +37,32 @@ class SyncTransport:
         *,
         client: httpx.Client | None = None,
     ) -> None:
-        self._config = config
-        self._auth = auth
-        self._client = client or httpx.Client(timeout=config.timeout, verify=config.verify)
+        self._config: Config = config
+        self._auth: AuthProvider = auth
+        self._client: httpx.Client = client or httpx.Client(
+            timeout=config.timeout, verify=config.verify
+        )
         self._base: str | None = None
 
+    def __enter__(self) -> SyncTransport:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
     def send(self, spec: RequestSpec) -> httpx.Response:
+        """
+        Execute *spec* and return the raw response, raising on an unexpected status.
+        """
         token = self._auth.authenticate(self._client)
         if self._base is None:
             self._base = _common.resolve_base(token, self._config)
+
         prepared = _common.prepare(spec, self._base, token)
         try:
             response = self._client.request(
@@ -58,15 +78,7 @@ class SyncTransport:
         return response
 
     def close(self) -> None:
+        """
+        Close the underlying httpx client.
+        """
         self._client.close()
-
-    def __enter__(self) -> SyncTransport:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.close()

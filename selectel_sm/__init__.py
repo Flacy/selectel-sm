@@ -1,4 +1,6 @@
-"""selectel-sm — a Python client for Selectel Secrets Manager (sync + async)."""
+"""
+selectel-sm — a Python client for Selectel Secrets Manager (sync + async).
+"""
 
 from __future__ import annotations
 
@@ -27,8 +29,7 @@ from selectel_sm.resources import (
     SecretWithVersions,
 )
 
-__version__ = "0.1.0"
-
+__version__: str = "0.2.0"
 __all__ = [
     "IDENTITY_URL_INTL",
     "IDENTITY_URL_RU",

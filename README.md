@@ -133,6 +133,82 @@ HTTP statuses map to `BadRequestError` (400), `ForbiddenError` (403), `NotFoundE
 `ConflictError` (409), and `ServerError` (5xx). Authentication and endpoint-resolution problems
 raise `AuthenticationError` and `EndpointNotFoundError` respectively.
 
+## Command-line interface
+
+Installing the `[cli]` extra adds a `selectel-sm` command (built on `typer` + `rich`). It is
+designed for humans on a developer machine, but degrades gracefully into scripted/CI use.
+
+```bash
+pip install "selectel-sm[cli]"
+```
+
+### Authentication & profiles
+
+Log in once to create a **profile**. Non-secret context (region, project, username, …) is stored
+in a TOML config at `$XDG_CONFIG_HOME/selectel-sm/config.toml`; the **password and cached token
+live only in your OS keyring** — never on disk.
+
+```bash
+selectel-sm login --region ru-7 --account-id 123456 \
+    --project my-project --username my-service-user      # prompts for the password
+
+selectel-sm whoami                  # active profile + cached-token status
+selectel-sm profile list            # all profiles (marks the default)
+selectel-sm profile use prod        # switch the default profile
+selectel-sm logout                  # clears keyring secrets, keeps profile metadata
+```
+
+Each profile chooses a persistence policy: `keyring` (credentials + auto-refreshed token in the
+OS keyring — convenient, the default for a workstation) or `none` (nothing persisted; credentials
+come from the environment or a prompt — correct for servers/CI). `--no-store` (or
+`SELECTEL_SM_NO_STORE=1`) forces "persist nothing" for a single run.
+
+For zero-config automation, set `SELECTEL_SM_*` environment variables and skip `login` entirely —
+an ephemeral, non-persisting profile is synthesized from the environment:
+
+```bash
+export SELECTEL_SM_REGION=ru-7
+export SELECTEL_SM_TOKEN=gAAAAAB...            # or USERNAME/PASSWORD/ACCOUNT_ID/PROJECT
+selectel-sm secrets list
+```
+
+### Working with secrets
+
+```bash
+selectel-sm secrets list                       # metadata only — never values   [-o table|json]
+selectel-sm secrets create api_key --stdin     # value via --stdin, --file, or a hidden prompt
+selectel-sm secrets set-description api_key "Rotated key"
+selectel-sm secrets delete api_key --yes       # destructive → confirmation (or --yes)
+```
+
+Reading a value is deliberately guarded so it never lands in your terminal/logs by accident:
+
+```bash
+selectel-sm secrets get api_key                # metadata + a MASK (••••••) — no value
+selectel-sm secrets get api_key --reveal       # show the value
+selectel-sm secrets get api_key --copy         # copy to the clipboard, print nothing
+export API_KEY=$(selectel-sm secrets get api_key --raw)   # raw bytes to stdout, no newline
+selectel-sm secrets get api_key -o json --reveal          # value as base64 (safe to log w/o --reveal)
+```
+
+The value is **never** a positional argument (it would leak into shell history). Versions are
+managed under a subgroup; reading a specific version's value still goes through `get`:
+
+```bash
+selectel-sm secrets version list api_key       # all versions (marks the current one)
+selectel-sm secrets version add api_key --activate --file ./new-value
+selectel-sm secrets version activate api_key 2
+selectel-sm secrets get api_key --version 2 --reveal
+```
+
+### Scripting
+
+Errors print to **stderr**; machine output and secret values go to **stdout**, so pipes stay
+clean. The exit code reflects the failure: `3` auth, `4` not found, `5` forbidden, `6` conflict,
+`7` server, `8` bad request, `9` endpoint resolution, `10` network, `2` usage, `1` other.
+Confirmations **fail closed**: a destructive command in a non-interactive shell errors out unless
+`--yes` is given (it never hangs on a prompt or deletes silently).
+
 ## A note on quirks
 
 Selectel's Secrets Manager API has a few undocumented behaviors this client handles for you,

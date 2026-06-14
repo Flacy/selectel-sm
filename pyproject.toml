@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "selectel-sm"
-version = "0.1.1"
+version = "0.2.0"
 description = "Python client for Selectel Secrets Manager (sync + async)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,7 +24,13 @@ classifiers = [
 dependencies = ["httpx>=0.27"]
 
 [project.optional-dependencies]
-cli = ["typer>=0.12", "rich>=13.0"]
+cli = [
+    "typer>=0.12",
+    "rich>=13.0",
+    "keyring>=25.0",
+    "tomli-w>=1.0",
+    "pyperclip>=1.8",
+]
 
 [project.urls]
 Homepage = "https://github.com/Flacy/selectel-sm"
@@ -44,6 +50,9 @@ dev = [
     # CLI deps are needed to type-check and test the cli package.
     "typer>=0.12",
     "rich>=13.0",
+    "keyring>=25.0",
+    "tomli-w>=1.0",
+    "pyperclip>=1.8",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -64,6 +73,11 @@ python_version = "3.12"
 strict = true
 warn_unused_ignores = true
 warn_redundant_casts = true
+
+# pyperclip ships no type stubs; it's only used in one place (--copy) behind a thin wrapper.
+[[tool.mypy.overrides]]
+module = ["pyperclip"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

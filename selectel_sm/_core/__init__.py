@@ -1,1 +1,3 @@
-"""Internal, transport-agnostic helpers. Not part of the public API."""
+"""
+Internal, transport-agnostic helpers. Not part of the public API.
+"""
