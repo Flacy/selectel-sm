@@ -1,4 +1,5 @@
-"""Client configuration.
+"""
+Client configuration.
 
 The bootstrap *identity* URL is the only endpoint that cannot be discovered from a catalog
 (we need it to authenticate before any catalog exists), so it lives here with sensible defaults.
@@ -20,15 +21,16 @@ __all__ = [
 ]
 
 # Keystone v3 identity endpoints used to obtain a token (docs.selectel.ru/api/urls).
-IDENTITY_URL_RU = "https://cloud.api.selcloud.ru/identity/v3"
-IDENTITY_URL_INTL = "https://cloud.api.selcloud.com/identity/v3"
-DEFAULT_INTERFACE = "public"
-DEFAULT_TIMEOUT = httpx.Timeout(30.0)
+IDENTITY_URL_RU: str = "https://cloud.api.selcloud.ru/identity/v3"
+IDENTITY_URL_INTL: str = "https://cloud.api.selcloud.com/identity/v3"
+DEFAULT_INTERFACE: str = "public"
+DEFAULT_TIMEOUT: httpx.Timeout = httpx.Timeout(30.0)
 
 
 @dataclass(frozen=True, slots=True)
 class Config:
-    """Connection settings for a Secrets Manager client.
+    """
+    Connection settings for a Secrets Manager client.
 
     ``region`` is required: Selectel has no implicit default region, and the catalog lists an
     endpoint per region. Set ``sm_base_url`` to bypass catalog resolution entirely (handy for
@@ -45,5 +47,10 @@ class Config:
     verify: bool = True
 
     def __post_init__(self) -> None:
+        """
+        Validate the settings after construction.
+
+        :raises ValueError: If ``region`` is empty.
+        """
         if not self.region:
             raise ValueError("Config.region is required (e.g. 'ru-7').")

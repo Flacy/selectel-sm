@@ -1,4 +1,5 @@
-"""Public models for Secrets Manager resources.
+"""
+Public models for Secrets Manager resources.
 
 Shared across resources (a :class:`Secret` embeds the current :class:`SecretVersion`, and the
 versions resource returns the same ``SecretVersion``). Values arrive base64-encoded and are
@@ -27,12 +28,15 @@ __all__ = [
 
 
 def _blank_to_none(value: str | None) -> str | None:
-    """Treat the API's empty-string description as absent."""
+    """
+    Treat the API's empty-string description as absent.
+    """
     return value or None
 
 
 class SecretType(StrEnum):
-    """The ``type`` of an entry returned by listing.
+    """
+    The ``type`` of an entry returned by listing.
 
     The API documentation is empty on this field, but in practice every entry is ``Secret``.
     We model it as a single-member enum on purpose: any other value the API might return raises
@@ -43,6 +47,13 @@ class SecretType(StrEnum):
 
     @classmethod
     def parse(cls, value: str) -> SecretType:
+        """
+        Parse the API's ``type`` string into a :class:`SecretType`.
+
+        :param value: The raw ``type`` value from a listing entry.
+        :returns: The matching enum member.
+        :raises SelectelSMError: If *value* is not a known secret type.
+        """
         try:
             return cls(value)
         except ValueError as exc:
@@ -54,7 +65,8 @@ class SecretType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class SecretVersion:
-    """A single version of a secret.
+    """
+    A single version of a secret.
 
     ``value`` is only returned by endpoints that expose the payload (get secret / get version);
     the versions listing returns metadata only, so ``value`` is ``None`` there.
@@ -68,6 +80,9 @@ class SecretVersion:
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> SecretVersion:
+        """
+        Build a :class:`SecretVersion` from one raw version object.
+        """
         encoded = raw.get("value")
         return cls(
             version_id=int(raw["version_id"]),
@@ -80,7 +95,8 @@ class SecretVersion:
 
 @dataclass(frozen=True, slots=True)
 class SecretSummary:
-    """A lightweight secret entry as returned by listing (no value, no version).
+    """
+    A lightweight secret entry as returned by listing (no value, no version).
 
     Listing wraps each secret's descriptive fields under a ``metadata`` block; this flattens the
     parts we model while keeping the whole entry in ``raw``.
@@ -94,6 +110,9 @@ class SecretSummary:
 
     @classmethod
     def from_raw(cls, raw: dict[str, Any]) -> SecretSummary:
+        """
+        Build a :class:`SecretSummary` from one raw listing entry.
+        """
         metadata = raw.get("metadata") or {}
         return cls(
             name=raw["name"],
@@ -106,7 +125,9 @@ class SecretSummary:
 
 @dataclass(frozen=True, slots=True)
 class Secret:
-    """A secret and the version returned alongside it (the current version on a plain GET)."""
+    """
+    A secret and the version returned alongside it (the current version on a plain GET).
+    """
 
     name: str
     description: str | None
@@ -114,13 +135,11 @@ class Secret:
     version: SecretVersion | None
     raw: dict[str, Any]
 
-    @property
-    def value(self) -> bytes | None:
-        """Convenience accessor for the embedded version's decoded value."""
-        return self.version.value if self.version else None
-
     @classmethod
     def from_response(cls, name: str, body: dict[str, Any]) -> Secret:
+        """
+        Build a :class:`Secret` from a get/create response body.
+        """
         version = body.get("version")
         return cls(
             name=body.get("name") or name,
@@ -130,10 +149,21 @@ class Secret:
             raw=body,
         )
 
+    @property
+    def value(self) -> bytes | None:
+        """
+        Convenience accessor for the embedded version's decoded value.
+
+        :returns: The current version's value, or ``None`` when no version is embedded.
+        """
+        return self.version.value if self.version else None
+
 
 @dataclass(frozen=True, slots=True)
 class SecretWithVersions:
-    """A secret together with metadata for all of its versions (no values)."""
+    """
+    A secret together with metadata for all of its versions (no values).
+    """
 
     name: str
     description: str | None
@@ -141,13 +171,11 @@ class SecretWithVersions:
     versions: tuple[SecretVersion, ...]
     raw: dict[str, Any]
 
-    @property
-    def current(self) -> SecretVersion | None:
-        """The version flagged ``is_current``, if any."""
-        return next((version for version in self.versions if version.is_current), None)
-
     @classmethod
     def from_response(cls, name: str, body: dict[str, Any]) -> SecretWithVersions:
+        """
+        Build a :class:`SecretWithVersions` from a get-versions response body.
+        """
         return cls(
             name=body.get("name") or name,
             description=_blank_to_none(body.get("description")),
@@ -155,3 +183,12 @@ class SecretWithVersions:
             versions=tuple(SecretVersion.from_raw(v) for v in body.get("versions", [])),
             raw=body,
         )
+
+    @property
+    def current(self) -> SecretVersion | None:
+        """
+        The version flagged ``is_current``, if any.
+
+        :returns: The current version, or ``None`` when none is marked current.
+        """
+        return next((version for version in self.versions if version.is_current), None)

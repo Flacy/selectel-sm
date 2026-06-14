@@ -1,4 +1,5 @@
-"""URL helpers for catalog endpoints.
+"""
+URL helpers for catalog endpoints.
 
 Selectel's service catalog returns Secrets Manager URLs with quirks that need cleaning before
 use, e.g. ``https://cloud.api.selcloud.ru//secrets-manager/`` (a double slash in the path and a
@@ -14,7 +15,8 @@ __all__ = ["join", "normalize"]
 
 
 def normalize(url: str) -> str:
-    """Return *url* with collapsed duplicate path slashes and no trailing slash.
+    """
+    Return *url* with collapsed duplicate path slashes and no trailing slash.
 
     The scheme/host are left untouched; only the path is cleaned. The query and fragment are
     preserved (catalog URLs don't use them, but we don't want to silently drop them).
@@ -29,7 +31,8 @@ def normalize(url: str) -> str:
 
 
 def join(base: str, *segments: str, trailing_slash: bool = False) -> str:
-    """Join *base* with path *segments*, normalizing slashes.
+    """
+    Join *base* with path *segments*, normalizing slashes.
 
     *base* is normalized first; each segment may itself contain slashes and is split, so callers
     can pass either ``join(base, "v1", "name")`` or ``join(base, "v1/name")``. Set
@@ -44,6 +47,7 @@ def join(base: str, *segments: str, trailing_slash: bool = False) -> str:
     path_segments = [segment for segment in parts.path.split("/") if segment]
     for segment in segments:
         path_segments.extend(piece for piece in segment.split("/") if piece)
+
     path = "/" + "/".join(path_segments)
     if trailing_slash and not path.endswith("/"):
         path += "/"

@@ -1,4 +1,5 @@
-"""Map HTTP responses to the library's exception hierarchy.
+"""
+Map HTTP responses to the library's exception hierarchy.
 
 Shared by both transports so error handling is identical for sync and async.
 """
@@ -32,12 +33,15 @@ _STATUS_EXCEPTIONS: dict[int, type[APIError]] = {
 
 
 def _message(response: httpx.Response) -> str:
-    """Best-effort human-readable message from a response body."""
+    """
+    Best-effort human-readable message from a response body.
+    """
     try:
         body = response.json()
     except ValueError:
         text = response.text.strip()
         return text or f"HTTP {response.status_code}"
+
     if isinstance(body, dict):
         for key in ("message", "error", "detail"):
             value = body.get(key)
@@ -47,9 +51,16 @@ def _message(response: httpx.Response) -> str:
 
 
 def raise_for_status(response: httpx.Response, expected: Sequence[int]) -> None:
-    """Raise the appropriate :class:`APIError` subclass if *response* is not expected."""
+    """
+    Raise the appropriate :class:`APIError` subclass if *response* is not expected.
+
+    :param response: The HTTP response to inspect.
+    :param expected: Status codes treated as success for this operation.
+    :raises APIError: (or a subclass) when ``response.status_code`` is not in *expected*.
+    """
     if response.status_code in expected:
         return
+
     message = _message(response)
     status = response.status_code
     exc_type: type[APIError]

@@ -1,4 +1,5 @@
-"""The only module that touches secrets at rest.
+"""
+The only module that touches secrets at rest.
 
 Per the design's hard invariant, the service-user password and the cached token live **only** in
 the OS keyring (Keychain / libsecret / Windows Credential Manager) — never in the config file.
@@ -31,18 +32,27 @@ if TYPE_CHECKING:
 
 __all__ = ["CachedToken", "clear", "load_token", "read_password", "save_token", "write_password"]
 
-SERVICE = "selectel-sm"
+SERVICE: str = "selectel-sm"
 
 
 def _password_key(profile: str) -> str:
+    """
+    Keyring entry key holding *profile*'s service-user password.
+    """
     return f"{profile}:password"
 
 
 def _token_key(profile: str) -> str:
+    """
+    Keyring entry key holding *profile*'s cached token blob.
+    """
     return f"{profile}:token"
 
 
 def _unavailable(exc: Exception) -> CLIError:
+    """
+    Build the error raised when no usable keyring backend is available.
+    """
     return CLIError(
         "No usable keyring backend is available. Use a profile with store='none' "
         "(credentials via env/prompt, nothing persisted) or run on a machine with a keyring. "
@@ -53,28 +63,19 @@ def _unavailable(exc: Exception) -> CLIError:
 
 @dataclass(frozen=True, slots=True)
 class CachedToken:
-    """A token cached in the keyring, with the metadata needed to reuse it offline."""
+    """
+    A token cached in the keyring, with the metadata needed to reuse it offline.
+    """
 
     value: str
     expires_at: datetime
     sm_base_url: str
 
-    def is_fresh(self, *, margin_seconds: float) -> bool:
-        """Whether the token is still valid, treating it as expired *margin_seconds* early."""
-        remaining = (self.expires_at - datetime.now(UTC)).total_seconds()
-        return remaining > margin_seconds
-
-    def to_json(self) -> str:
-        return json.dumps(
-            {
-                "value": self.value,
-                "expires_at": self.expires_at.isoformat(),
-                "sm_base_url": self.sm_base_url,
-            }
-        )
-
     @classmethod
     def from_json(cls, blob: str) -> CachedToken | None:
+        """
+        Parse a cached-token JSON blob, returning ``None`` for corrupt/legacy data.
+        """
         try:
             data = json.loads(blob)
             return cls(
@@ -86,8 +87,30 @@ class CachedToken:
             # A corrupt/legacy blob is treated as "no cache" — we just re-mint.
             return None
 
+    def is_fresh(self, *, margin_seconds: float) -> bool:
+        """
+        Whether the token is still valid, treating it as expired *margin_seconds* early.
+        """
+        remaining = (self.expires_at - datetime.now(UTC)).total_seconds()
+        return remaining > margin_seconds
+
+    def to_json(self) -> str:
+        """
+        Serialize to the JSON blob stored in the keyring.
+        """
+        return json.dumps(
+            {
+                "value": self.value,
+                "expires_at": self.expires_at.isoformat(),
+                "sm_base_url": self.sm_base_url,
+            }
+        )
+
 
 def _get(key: str) -> str | None:
+    """
+    Read a keyring entry, mapping backend failures to :class:`CLIError`.
+    """
     try:
         return keyring.get_password(SERVICE, key)
     except NoKeyringError as exc:
@@ -97,6 +120,9 @@ def _get(key: str) -> str | None:
 
 
 def _set(key: str, value: str) -> None:
+    """
+    Write a keyring entry, mapping backend failures to :class:`CLIError`.
+    """
     try:
         keyring.set_password(SERVICE, key, value)
     except NoKeyringError as exc:
@@ -106,6 +132,9 @@ def _set(key: str, value: str) -> None:
 
 
 def _delete(key: str) -> None:
+    """
+    Delete a keyring entry, treating an already-absent key as success.
+    """
     try:
         keyring.delete_password(SERVICE, key)
     except NoKeyringError as exc:
@@ -116,25 +145,38 @@ def _delete(key: str) -> None:
 
 
 def read_password(profile: str) -> str | None:
+    """
+    Return *profile*'s stored service-user password, or ``None`` when absent.
+    """
     return _get(_password_key(profile))
 
 
 def write_password(profile: str, password: str) -> None:
+    """
+    Store *profile*'s service-user password.
+    """
     _set(_password_key(profile), password)
 
 
 def load_token(profile: str) -> CachedToken | None:
+    """
+    Return *profile*'s cached token, or ``None`` when absent or unparsable.
+    """
     blob = _get(_token_key(profile))
     return CachedToken.from_json(blob) if blob else None
 
 
 def save_token(profile: str, token: Token, sm_base_url: str) -> None:
-    """Persist a freshly minted *token* plus its resolved SM endpoint."""
+    """
+    Persist a freshly minted *token* plus its resolved SM endpoint.
+    """
     cached = CachedToken(value=token.value, expires_at=token.expires_at, sm_base_url=sm_base_url)
     _set(_token_key(profile), cached.to_json())
 
 
 def clear(profile: str) -> None:
-    """Remove both secrets for *profile* (used by ``logout`` and ``profile remove``)."""
+    """
+    Remove both secrets for *profile* (used by ``logout`` and ``profile remove``).
+    """
     _delete(_password_key(profile))
     _delete(_token_key(profile))

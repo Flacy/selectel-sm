@@ -1,4 +1,5 @@
-"""Transport-agnostic description of an HTTP request.
+"""
+Transport-agnostic description of an HTTP request.
 
 A :class:`RequestSpec` is a pure-data description of a single Secrets Manager call. The sync and
 async transports both know how to execute one, so the (future) SM operations can be written once
@@ -22,7 +23,8 @@ DEFAULT_EXPECTED_STATUS: tuple[int, ...] = (200, 201, 204)
 
 @dataclass(frozen=True, slots=True)
 class RequestSpec:
-    """A single HTTP call against the Secrets Manager API.
+    """
+    A single HTTP call against the Secrets Manager API.
 
     ``path`` is relative to the resolved, version-prefixed base URL (e.g. ``"my-secret"`` or
     ``"my-secret/versions"``); the transport joins it onto ``<sm_base>/<api_version>``.

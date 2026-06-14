@@ -1,4 +1,5 @@
-"""Synchronous Secrets Manager client.
+"""
+Synchronous Secrets Manager client.
 
 Wires together config + auth + transport, owns the connection lifecycle, and exposes the API
 resource namespaces (``.secrets``, and ``.versions`` once implemented), each delegating to
@@ -33,11 +34,31 @@ class SecretsManagerClient:
         *,
         client: httpx.Client | None = None,
     ) -> None:
-        self._config = config
-        self._auth = auth
-        self._transport = SyncTransport(config, auth, client=client)
-        self.secrets = SecretsResource(self._transport)
+        """
+        Wire up the transport and resource namespaces from an explicit config + auth provider.
+
+        Prefer the :meth:`from_credentials` / :meth:`from_token` factories for the common cases.
+
+        :param config: Connection settings.
+        :param auth: The authentication provider that mints/refreshes tokens.
+        :param client: Optional pre-built httpx client (otherwise one is created).
+        """
+        self._config: Config = config
+        self._auth: AuthProvider = auth
+        self._transport: SyncTransport = SyncTransport(config, auth, client=client)
+        self.secrets: SecretsResource = SecretsResource(self._transport)
         # self.versions = VersionsResource(self._transport)  # next operation
+
+    def __enter__(self) -> SecretsManagerClient:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
 
     @classmethod
     def from_credentials(
@@ -54,7 +75,21 @@ class SecretsManagerClient:
         verify: bool = True,
         sm_base_url: str | None = None,
     ) -> SecretsManagerClient:
-        """Build a client that authenticates with service-user credentials."""
+        """
+        Build a client that authenticates with service-user credentials.
+
+        :param region: Region whose Secrets Manager endpoint to use (e.g. ``ru-7``).
+        :param account_id: Selectel account id (Keystone domain name).
+        :param username: Service-user name.
+        :param password: Service-user password.
+        :param project_name: Project to scope the token to.
+        :param identity_url: Keystone v3 identity base URL.
+        :param interface: Catalog interface to resolve (``public`` by default).
+        :param timeout: Optional httpx timeout; the library default is used when ``None``.
+        :param verify: Whether to verify TLS certificates.
+        :param sm_base_url: Optional explicit SM base URL, bypassing catalog resolution.
+        :returns: A ready-to-use client.
+        """
         config = _make_config(
             region=region,
             identity_url=identity_url,
@@ -86,10 +121,20 @@ class SecretsManagerClient:
         timeout: httpx.Timeout | None = None,
         verify: bool = True,
     ) -> SecretsManagerClient:
-        """Build a client from an existing project-scoped token.
+        """
+        Build a client from an existing project-scoped token.
 
         Without ``sm_base_url`` the token is introspected against ``identity_url`` (defaulting to
         the RU identity endpoint) to discover the Secrets Manager endpoint.
+
+        :param region: Region whose Secrets Manager endpoint to use (e.g. ``ru-7``).
+        :param token: An existing project-scoped IAM token.
+        :param identity_url: Keystone v3 identity base URL used to introspect the token.
+        :param sm_base_url: Optional explicit SM base URL; when set, introspection is skipped.
+        :param interface: Catalog interface to resolve (``public`` by default).
+        :param timeout: Optional httpx timeout; the library default is used when ``None``.
+        :param verify: Whether to verify TLS certificates.
+        :returns: A ready-to-use client.
         """
         if sm_base_url is None and identity_url is None:
             identity_url = IDENTITY_URL_RU
@@ -105,18 +150,10 @@ class SecretsManagerClient:
         return cls(config, auth)
 
     def close(self) -> None:
+        """
+        Close the underlying transport and its httpx client.
+        """
         self._transport.close()
-
-    def __enter__(self) -> SecretsManagerClient:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.close()
 
 
 def _make_config(
@@ -130,6 +167,9 @@ def _make_config(
     verify: bool,
     sm_base_url: str | None,
 ) -> Config:
+    """
+    Build a :class:`~selectel_sm.config.Config`, applying the default timeout when unset.
+    """
     return Config(
         region=region,
         identity_url=identity_url,

@@ -1,4 +1,5 @@
-"""Bring-your-own-token auth.
+"""
+Bring-your-own-token auth.
 
 The caller supplies an existing project-scoped token. To discover the service catalog (needed to
 resolve the Secrets Manager endpoint), the provider validates/introspects the token against
@@ -21,14 +22,34 @@ __all__ = ["StaticTokenAuth"]
 
 # A synthetic token (no introspection) gets a long, fixed lifetime so it is never "refreshed":
 # we have nothing to refresh it from, and the real expiry is the caller's concern.
-_SYNTHETIC_TTL = timedelta(days=3650)
+_SYNTHETIC_TTL: timedelta = timedelta(days=3650)
 
 
 class StaticTokenAuth(AuthProvider):
     def __init__(self, token: str, *, identity_url: str | None = None) -> None:
+        """
+        Wrap a caller-supplied project-scoped token.
+
+        :param token: An existing project-scoped IAM token.
+        :param identity_url: Optional Keystone v3 identity base URL used to introspect the token
+            and discover its catalog. When ``None``, no catalog is resolved and the caller must
+            set ``Config.sm_base_url`` instead.
+        """
         super().__init__()
-        self._token = token
-        self._identity_url = identity_url.rstrip("/") if identity_url else None
+        self._token: str = token
+        self._identity_url: str | None = identity_url.rstrip("/") if identity_url else None
+
+    @staticmethod
+    def _check(response: httpx.Response) -> None:
+        if not response.is_success:
+            raise AuthenticationError(f"Token introspection failed (HTTP {response.status_code}).")
+
+    @staticmethod
+    def _json(response: httpx.Response) -> object:
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise AuthenticationError("Introspection response is not valid JSON.") from exc
 
     @property
     def _url(self) -> str | None:
@@ -60,11 +81,6 @@ class StaticTokenAuth(AuthProvider):
         except (KeyError, TypeError, ValueError) as exc:
             raise AuthenticationError(f"Malformed introspection body: {exc}") from exc
 
-    @staticmethod
-    def _check(response: httpx.Response) -> None:
-        if not response.is_success:
-            raise AuthenticationError(f"Token introspection failed (HTTP {response.status_code}).")
-
     def _fetch(self, client: httpx.Client) -> Token:
         url = self._url
         if url is None:
@@ -86,10 +102,3 @@ class StaticTokenAuth(AuthProvider):
             raise TransportError(f"Failed to reach Keystone: {exc}") from exc
         self._check(response)
         return self._from_body(self._json(response))
-
-    @staticmethod
-    def _json(response: httpx.Response) -> object:
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise AuthenticationError("Introspection response is not valid JSON.") from exc

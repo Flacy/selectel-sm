@@ -1,4 +1,6 @@
-"""API resource namespaces (``client.secrets``, ``client.versions``, ...)."""
+"""
+API resource namespaces (``client.secrets``, ``client.versions``, ...).
+"""
 
 from __future__ import annotations
 

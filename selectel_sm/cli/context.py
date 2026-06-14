@@ -1,4 +1,5 @@
-"""Resolve the effective profile and build a configured client.
+"""
+Resolve the effective profile and build a configured client.
 
 This is where flags, environment variables, the config file, and the keyring are combined into a
 ready-to-use :class:`~selectel_sm.SecretsManagerClient`, following the precedence agreed in the
@@ -41,10 +42,10 @@ if TYPE_CHECKING:
 __all__ = ["AppState", "ResolvedProfile", "build_client", "mint_token", "resolve_profile"]
 
 # Env var that names the active profile (its fields are overridden by the per-field vars below).
-ENV_PROFILE = "SELECTEL_SM_PROFILE"
-ENV_NO_STORE = "SELECTEL_SM_NO_STORE"
-ENV_TOKEN = "SELECTEL_SM_TOKEN"
-ENV_PASSWORD = "SELECTEL_SM_PASSWORD"
+ENV_PROFILE: str = "SELECTEL_SM_PROFILE"
+ENV_NO_STORE: str = "SELECTEL_SM_NO_STORE"
+ENV_TOKEN: str = "SELECTEL_SM_TOKEN"
+ENV_PASSWORD: str = "SELECTEL_SM_PASSWORD"
 # Per-field overrides; keys are Profile attribute names.
 ENV_FIELDS: dict[str, str] = {
     "region": "SELECTEL_SM_REGION",
@@ -58,7 +59,9 @@ ENV_FIELDS: dict[str, str] = {
 
 @dataclass(slots=True)
 class AppState:
-    """Global flags from the root callback, shared with every command via the Typer context."""
+    """
+    Global flags from the root callback, shared with every command via the Typer context.
+    """
 
     profile: str | None = None
     output: str = "table"
@@ -69,12 +72,17 @@ class AppState:
 
     @property
     def json_output(self) -> bool:
+        """
+        Whether machine JSON output was requested (``-o json``).
+        """
         return self.output == "json"
 
 
 @dataclass(slots=True)
 class ResolvedProfile:
-    """The effective, merged connection context for one command invocation."""
+    """
+    The effective, merged connection context for one command invocation.
+    """
 
     name: str
     region: str
@@ -90,29 +98,44 @@ class ResolvedProfile:
 
     @property
     def persists(self) -> bool:
+        """
+        Whether this profile's secrets are persisted in the keyring.
+        """
         return self.store == STORE_KEYRING
 
 
 def _env(name: str) -> str | None:
+    """
+    Return environment variable *name*, normalizing the empty string to ``None``.
+    """
     value = os.environ.get(name)
     return value or None
 
 
 def _resolve_name(state: AppState) -> str | None:
+    """
+    Pick the active profile name from flags, env, then the configured default.
+    """
     return state.profile or _env(ENV_PROFILE) or state.config.default_profile
 
 
 def _has_env_credentials() -> bool:
-    """Whether the environment alone can authenticate (token, or username+password)."""
+    """
+    Whether the environment alone can authenticate (token, or username+password).
+    """
     if _env(ENV_TOKEN):
         return True
     return bool(_env(ENV_PASSWORD) and _env(ENV_FIELDS["username"]))
 
 
 def resolve_profile(state: AppState) -> ResolvedProfile:
-    """Merge config + env into the effective profile for this invocation.
+    """
+    Merge config + env into the effective profile for this invocation.
 
-    Raises :class:`CLIError` when no profile is configured and the environment cannot stand in.
+    :param state: Shared app state holding flags and the loaded config.
+    :returns: The merged, ready-to-use profile.
+    :raises CLIError: If a named profile is missing, or no profile is configured and the
+        environment cannot stand in.
     """
     name = _resolve_name(state)
     profile = state.config.get(name) if name else None
@@ -121,7 +144,7 @@ def resolve_profile(state: AppState) -> ResolvedProfile:
     if profile is None:
         if name is not None:
             raise CLIError(f"No such profile: {name!r}.", exit_code=4)
-        if not _has_env_credentials():
+        elif not _has_env_credentials():
             raise CLIError(
                 "No profile configured and no credentials in the environment. "
                 "Run 'selectel-sm login' or set SELECTEL_SM_* variables.",
@@ -135,6 +158,12 @@ def resolve_profile(state: AppState) -> ResolvedProfile:
 
 
 def _merge(profile: Profile, state: AppState, *, ephemeral: bool) -> ResolvedProfile:
+    """
+    Apply env overrides on top of *profile* and resolve the persistence policy.
+
+    :raises CLIError: If no region can be determined.
+    """
+
     def pick(attr: str, default: str | None = None) -> str | None:
         return _env(ENV_FIELDS[attr]) or getattr(profile, attr) or default
 
@@ -145,7 +174,11 @@ def _merge(profile: Profile, state: AppState, *, ephemeral: bool) -> ResolvedPro
             exit_code=3,
         )
 
-    store = STORE_NONE if (state.no_store or _env(ENV_NO_STORE)) else profile.store
+    # Two conditions, so a block per style rule 6 (SIM108 would prefer a ternary here).
+    if state.no_store or _env(ENV_NO_STORE):  # noqa: SIM108
+        store = STORE_NONE
+    else:
+        store = profile.store
 
     return ResolvedProfile(
         name=profile.name,
@@ -163,6 +196,9 @@ def _merge(profile: Profile, state: AppState, *, ephemeral: bool) -> ResolvedPro
 
 
 def _client_config(resolved: ResolvedProfile) -> ClientConfig:
+    """
+    Build the library :class:`~selectel_sm.config.Config` from a resolved profile.
+    """
     return ClientConfig(
         region=resolved.region,
         identity_url=resolved.identity_url,
@@ -175,10 +211,18 @@ def _client_config(resolved: ResolvedProfile) -> ClientConfig:
 
 
 def mint_token(resolved: ResolvedProfile, password: str) -> tuple[Token, str]:
-    """Authenticate with credentials and resolve the SM endpoint (no client kept).
+    """
+    Authenticate with credentials and resolve the SM endpoint (no client kept).
 
-    Returns the freshly minted token and its resolved Secrets Manager base URL. Used both by
-    ``login`` (to validate + persist) and by :func:`build_client` on the credential path.
+    Used both by ``login`` (to validate + persist) and by :func:`build_client` on the credential
+    path.
+
+    :param resolved: The merged profile providing the credential fields.
+    :param password: The service-user password.
+    :returns: The freshly minted token and its resolved Secrets Manager base URL.
+    :raises CLIError: If required credential fields are missing.
+    :raises AuthenticationError: If Keystone rejects the credentials.
+    :raises TransportError: If Keystone cannot be reached.
     """
     missing = [
         label
@@ -191,6 +235,7 @@ def mint_token(resolved: ResolvedProfile, password: str) -> tuple[Token, str]:
     ]
     if missing:
         raise CLIError(f"Missing required credential fields: {', '.join(missing)}.", exit_code=3)
+
     config = _client_config(resolved)
     auth = PasswordAuth(
         identity_url=resolved.identity_url,
@@ -206,14 +251,20 @@ def mint_token(resolved: ResolvedProfile, password: str) -> tuple[Token, str]:
 
 
 def _resolve_password(resolved: ResolvedProfile) -> str:
-    """Find the service-user password: keyring (if persisting) → env → interactive prompt."""
+    """
+    Find the service-user password: keyring (if persisting) → env → interactive prompt.
+
+    :raises CLIError: If no password is available and stdin is not a TTY.
+    """
     if resolved.persists:
         stored = keyring_store.read_password(resolved.name)
         if stored is not None:
             return stored
+
     env_password = _env(ENV_PASSWORD)
     if env_password is not None:
         return env_password
+
     if not sys.stdin.isatty():
         raise CLIError(
             "No password available (not stored, not in SELECTEL_SM_PASSWORD, and stdin is not "
@@ -224,7 +275,15 @@ def _resolve_password(resolved: ResolvedProfile) -> str:
 
 
 def build_client(resolved: ResolvedProfile) -> SecretsManagerClient:
-    """Build a ready client, reusing a cached token when possible, minting otherwise."""
+    """
+    Build a ready client, reusing a cached token when possible, minting otherwise.
+
+    :param resolved: The merged profile for this invocation.
+    :returns: A configured :class:`~selectel_sm.SecretsManagerClient`.
+    :raises CLIError: If credentials/region are missing or the keyring is unavailable.
+    :raises AuthenticationError: If minting a token from credentials fails.
+    :raises TransportError: If Keystone cannot be reached.
+    """
     # 1. An explicit token from the environment wins (the bring-your-own-token path).
     if resolved.env_token:
         if resolved.sm_base_url:

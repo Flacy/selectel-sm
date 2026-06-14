@@ -1,4 +1,5 @@
-"""Typer + rich command-line interface for Selectel Secrets Manager.
+"""
+Typer + rich command-line interface for Selectel Secrets Manager.
 
 Command surface:
 
@@ -40,26 +41,24 @@ if TYPE_CHECKING:
     from selectel_sm.client import SecretsManagerClient
     from selectel_sm.resources.models import SecretVersion
 
-app = typer.Typer(
+app: typer.Typer = typer.Typer(
     name="selectel-sm",
     help="Client for Selectel Secrets Manager.",
     no_args_is_help=True,
     add_completion=False,
 )
-profile_app = typer.Typer(help="Manage connection profiles.", no_args_is_help=True)
-secrets_app = typer.Typer(help="Manage secrets.", no_args_is_help=True)
-version_app = typer.Typer(help="Manage secret versions.", no_args_is_help=True)
+profile_app: typer.Typer = typer.Typer(help="Manage connection profiles.", no_args_is_help=True)
+secrets_app: typer.Typer = typer.Typer(help="Manage secrets.", no_args_is_help=True)
+version_app: typer.Typer = typer.Typer(help="Manage secret versions.", no_args_is_help=True)
 app.add_typer(profile_app, name="profile")
 app.add_typer(secrets_app, name="secrets")
 secrets_app.add_typer(version_app, name="version")
 
 
-# --------------------------------------------------------------------------------------------- #
-# Root callback + shared helpers
-# --------------------------------------------------------------------------------------------- #
-
-
 def _version_callback(value: bool) -> None:
+    """
+    Eager ``--version`` callback: print the version and exit.
+    """
     if value:
         typer.echo(f"selectel-sm {__version__}")
         raise typer.Exit()
@@ -78,13 +77,18 @@ def main(
         is_eager=True,
     ),
 ) -> None:
-    """Set up shared state for every command."""
+    """
+    Set up shared state for every command.
+    """
     state = AppState(no_color=no_color, quiet=quiet, config=load_config())
     output.configure(state)
     ctx.obj = state
 
 
 def _state(ctx: typer.Context) -> AppState:
+    """
+    Return the :class:`AppState` stashed on the Typer context.
+    """
     return cast("AppState", ctx.obj)
 
 
@@ -95,7 +99,9 @@ def _apply(
     out: str | None = None,
     no_store: bool = False,
 ) -> None:
-    """Fold per-command global flags into the shared state before resolution."""
+    """
+    Fold per-command global flags into the shared state before resolution.
+    """
     if profile is not None:
         state.profile = profile
     if out is not None:
@@ -105,12 +111,20 @@ def _apply(
 
 
 def _open(state: AppState) -> tuple[SecretsManagerClient, ResolvedProfile]:
+    """
+    Resolve the profile and build a client for it.
+    """
     resolved = resolve_profile(state)
     return build_client(resolved), resolved
 
 
 def _confirm(prompt: str, *, yes: bool) -> None:
-    """Confirm a destructive action; fail closed when non-interactive without ``--yes``."""
+    """
+    Confirm a destructive action; fail closed when non-interactive without ``--yes``.
+
+    :raises CLIError: If confirmation is required but stdin is not a TTY.
+    :raises typer.Abort: If the user declines the prompt.
+    """
     if yes:
         return
     if not sys.stdin.isatty():
@@ -123,17 +137,22 @@ def _confirm(prompt: str, *, yes: bool) -> None:
 
 
 def _read_value(*, stdin: bool, file: str | None) -> bytes:
-    """Read a secret value from --stdin, --file, or a hidden prompt (never a positional arg)."""
+    """
+    Read a secret value from --stdin, --file, or a hidden prompt (never a positional arg).
+
+    :raises CLIError: If both sources are given, the file cannot be read, or no value is
+        available non-interactively.
+    """
     if stdin and file is not None:
         raise CLIError("Use only one of --stdin or --file.", exit_code=2)
     if stdin:
         return sys.stdin.buffer.read()
-    if file is not None:
+    elif file is not None:
         try:
             return Path(file).read_bytes()
         except OSError as exc:
             raise CLIError(f"Cannot read value file: {exc}", exit_code=2) from exc
-    if not sys.stdin.isatty():
+    elif not sys.stdin.isatty():
         raise CLIError(
             "No value provided: pass --stdin or --file (stdin is not a TTY).", exit_code=2
         )
@@ -141,17 +160,16 @@ def _read_value(*, stdin: bool, file: str | None) -> bytes:
 
 
 def _require_field(value: str | None, label: str, prompt_text: str) -> str:
-    """Return *value*, prompting for it when interactive, else failing with a clear message."""
+    """
+    Return *value*, prompting for it when interactive, else failing with a clear message.
+
+    :raises CLIError: If *value* is missing and stdin is not a TTY.
+    """
     if value:
         return value
     if not sys.stdin.isatty():
         raise CLIError(f"Missing required field: {label}.", exit_code=2)
     return str(typer.prompt(prompt_text))
-
-
-# --------------------------------------------------------------------------------------------- #
-# Auth & profiles
-# --------------------------------------------------------------------------------------------- #
 
 
 @app.command()
@@ -165,7 +183,9 @@ def login(
     project: str | None = typer.Option(None, "--project", help="Project name."),
     interface: str | None = typer.Option(None, "--interface"),
 ) -> None:
-    """Authenticate and persist a profile (config metadata + keyring secrets)."""
+    """
+    Authenticate and persist a profile (config metadata + keyring secrets).
+    """
     state = _state(ctx)
     name = profile or state.config.default_profile or "default"
 
@@ -227,7 +247,9 @@ def logout(
     profile: str | None = typer.Option(None, "--profile", help="Profile to clear."),
     all_profiles: bool = typer.Option(False, "--all", help="Clear secrets for every profile."),
 ) -> None:
-    """Remove stored secrets from the keyring (profile metadata is kept)."""
+    """
+    Remove stored secrets from the keyring (profile metadata is kept).
+    """
     state = _state(ctx)
     if all_profiles:
         names = list(state.config.profiles)
@@ -235,6 +257,7 @@ def logout(
             keyring_store.clear(profile_name)
         output.print_info(f"Cleared stored secrets for {len(names)} profile(s).", state)
         return
+
     name = profile or state.profile or state.config.default_profile
     if not name:
         raise CLIError("No profile to log out of. Pass --profile or --all.", exit_code=2)
@@ -250,7 +273,9 @@ def whoami(
     output_format: str = typer.Option("table", "-o", "--output", help="table|json."),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Show the active profile and its cached-token status."""
+    """
+    Show the active profile and its cached-token status.
+    """
     state = _state(ctx)
     _apply(state, profile=profile, out=output_format, no_store=no_store)
     resolved = resolve_profile(state)
@@ -309,7 +334,9 @@ def profile_list(
     ctx: typer.Context,
     output_format: str = typer.Option("table", "-o", "--output", help="table|json."),
 ) -> None:
-    """List configured profiles."""
+    """
+    List configured profiles.
+    """
     state = _state(ctx)
     _apply(state, out=output_format)
     profiles = state.config.profiles
@@ -364,7 +391,9 @@ def profile_list(
 @profile_app.command("use")
 @handle_errors
 def profile_use(ctx: typer.Context, name: str = typer.Argument(...)) -> None:
-    """Set the default profile."""
+    """
+    Set the default profile.
+    """
     state = _state(ctx)
     state.config.require(name)
     state.config.default_profile = name
@@ -379,7 +408,9 @@ def profile_remove(
     name: str = typer.Argument(...),
     yes: bool = typer.Option(False, "--yes", help="Skip confirmation."),
 ) -> None:
-    """Delete a profile entirely (config metadata + keyring secrets)."""
+    """
+    Delete a profile entirely (config metadata + keyring secrets).
+    """
     state = _state(ctx)
     state.config.require(name)
     _confirm(f"Remove profile {name!r} and its stored secrets?", yes=yes)
@@ -402,7 +433,9 @@ def secrets_list(
     output_format: str = typer.Option("table", "-o", "--output", help="table|json."),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """List secrets (metadata only — no values)."""
+    """
+    List secrets (metadata only — no values).
+    """
     state = _state(ctx)
     _apply(state, profile=profile, out=output_format, no_store=no_store)
     client, _ = _open(state)
@@ -450,7 +483,9 @@ def secrets_get(
     output_format: str = typer.Option("table", "-o", "--output", help="table|json."),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Read a secret. The value is masked unless --raw, --copy, or --reveal is given."""
+    """
+    Read a secret. The value is masked unless --raw, --copy, or --reveal is given.
+    """
     state = _state(ctx)
     _apply(state, profile=profile, out=output_format, no_store=no_store)
     if raw and copy:
@@ -478,7 +513,7 @@ def secrets_get(
             raise CLIError("Secret has no value to output.", exit_code=1)
         output.write_raw(value)
         return
-    if copy:
+    elif copy:
         if value is None:
             raise CLIError("Secret has no value to copy.", exit_code=1)
         output.copy_to_clipboard(value, name, state)
@@ -507,10 +542,14 @@ def secrets_get(
 
 
 def _value_cell(value: bytes | None, *, reveal: bool) -> str:
+    """
+    Render a secret value for a human table: ``-`` when absent, masked, or shown.
+    """
     if value is None:
         return "-"
-    if not reveal:
+    elif not reveal:
         return output.MASK
+
     text, is_binary = output.decode_for_display(value)
     return f"{text}  (base64; binary)" if is_binary else text
 
@@ -526,7 +565,9 @@ def secrets_create(
     profile: str | None = typer.Option(None, "--profile"),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Create a secret with its first version (value via --stdin, --file, or prompt)."""
+    """
+    Create a secret with its first version (value via --stdin, --file, or prompt).
+    """
     state = _state(ctx)
     _apply(state, profile=profile, no_store=no_store)
     value = _read_value(stdin=stdin, file=file)
@@ -546,7 +587,9 @@ def secrets_set_description(
     profile: str | None = typer.Option(None, "--profile"),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Set or clear a secret's description."""
+    """
+    Set or clear a secret's description.
+    """
     state = _state(ctx)
     _apply(state, profile=profile, no_store=no_store)
     if clear and text is not None:
@@ -568,7 +611,9 @@ def secrets_delete(
     profile: str | None = typer.Option(None, "--profile"),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Delete a secret and all of its versions."""
+    """
+    Delete a secret and all of its versions.
+    """
     state = _state(ctx)
     _apply(state, profile=profile, no_store=no_store)
     _confirm(f"Delete secret {name!r} and all of its versions?", yes=yes)
@@ -576,11 +621,6 @@ def secrets_delete(
     with client:
         client.secrets.delete(name)
     output.print_info(f"Deleted secret {name!r}.", state)
-
-
-# --------------------------------------------------------------------------------------------- #
-# Versions (management only — reading a value lives in `secrets get`)
-# --------------------------------------------------------------------------------------------- #
 
 
 @version_app.command("list")
@@ -592,7 +632,9 @@ def version_list(
     output_format: str = typer.Option("table", "-o", "--output", help="table|json."),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """List a secret's versions (metadata only; marks the current one)."""
+    """
+    List a secret's versions (metadata only; marks the current one).
+    """
     state = _state(ctx)
     _apply(state, profile=profile, out=output_format, no_store=no_store)
     client, _ = _open(state)
@@ -641,7 +683,9 @@ def version_add(
     profile: str | None = typer.Option(None, "--profile"),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Add a new version to an existing secret (value via --stdin, --file, or prompt)."""
+    """
+    Add a new version to an existing secret (value via --stdin, --file, or prompt).
+    """
     state = _state(ctx)
     _apply(state, profile=profile, no_store=no_store)
     value = _read_value(stdin=stdin, file=file)
@@ -661,7 +705,9 @@ def version_activate(
     profile: str | None = typer.Option(None, "--profile"),
     no_store: bool = typer.Option(False, "--no-store"),
 ) -> None:
-    """Make a specific version current (no confirmation — the change is reversible)."""
+    """
+    Make a specific version current (no confirmation — the change is reversible).
+    """
     state = _state(ctx)
     _apply(state, profile=profile, no_store=no_store)
     client, _ = _open(state)
